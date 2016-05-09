@@ -1,0 +1,102 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <CL/cl.h>
+#include<string.h>
+#include<conio.h>
+#include<iostream>
+using namespace std;
+#define MAX_SOURCE_SIZE (0x100000)
+
+int main(int argc, char *argv[])
+{
+	int *arr1, *rsum, *csum, row,col;
+	cout<<"Enter no of rows and columns of matrix: ";
+	cin>>row;	cin>>col;
+	int size=row*col;
+	arr1=new int[size];
+	rsum=new int[row];
+	csum=new int[col];
+
+	cout<<"Enter array :\n";
+	for(int i = 0; i<size; i++)
+		cin>>arr1[i];
+
+	FILE *fp = fopen("rowcolsum.cl", "r");
+	char *source_str;
+	size_t source_size;
+
+	if(!fp)
+	{
+		cout<<"Error: Failed to load file.";
+		getch();
+		exit(1);
+	}
+
+	source_str = (char*)malloc(MAX_SOURCE_SIZE);
+	source_size = fread(source_str, 1, MAX_SOURCE_SIZE, fp);
+	fclose(fp);
+
+	cl_platform_id platform_id = NULL;
+	cl_device_id device_id = NULL;
+	cl_uint ret_num_devices;
+	cl_uint ret_num_platforms;
+
+	cl_int ret = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
+	 ret = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_GPU, 1, &device_id, &ret_num_devices);	
+	
+	cl_context context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &ret);
+	
+	cl_command_queue command_queue = clCreateCommandQueue(context, device_id, 0, &ret);
+
+	//Create Memory Buffers on the Device for each Vector
+	cl_mem arr = clCreateBuffer(context, CL_MEM_READ_ONLY, size*sizeof(int), NULL, &ret);
+	cl_mem rowsm = clCreateBuffer(context, CL_MEM_WRITE_ONLY, size*sizeof(int), NULL, &ret);
+	cl_mem colsm = clCreateBuffer(context, CL_MEM_WRITE_ONLY, size*sizeof(int), NULL, &ret);
+
+	//Copy the lists A and B to respective Memory Buffers
+	ret = clEnqueueWriteBuffer(command_queue, arr, CL_TRUE, 0, size*sizeof(int), arr1, 0 ,NULL, NULL);
+	
+	//Create Program from Kernel Source
+	cl_program program = clCreateProgramWithSource(context, 1, (const char**)&source_str, (const size_t*)&source_size, &ret);
+
+	//Build the program
+	ret = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
+
+	//Create the OpenCl Kernel
+	cl_kernel kernel = clCreateKernel(program, "getsum", &ret);
+
+	//Set the args of the kernel
+	ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*)&arr);
+	ret = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void*)&rowsm);
+	ret = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void*)&colsm);
+	ret = clSetKernelArg(kernel, 3, sizeof(int), &row);
+	ret = clSetKernelArg(kernel, 4, sizeof(int), &col);
+
+	//Execute the OpenCL Kernel on the list
+	size_t global_item_size[2] = {row,col};		//Process the entire list
+	size_t local_item_size[2] = {1,1};			//Process in groups of 64
+
+	ret = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_item_size, local_item_size, 0, NULL, NULL);
+	ret = clFinish(command_queue);
+	ret = clEnqueueReadBuffer(command_queue, rowsm, CL_TRUE, 0, size*(sizeof(int)), rsum, 0, NULL, NULL);
+	ret = clEnqueueReadBuffer(command_queue, colsm, CL_TRUE, 0, size*(sizeof(int)), csum, 0, NULL, NULL);
+
+	cout<<"Done\nRow sums:\n";
+	for(int i=0;i<row;i++)
+		cout<<rsum[i]<<"\t";
+	cout<<"\nCol sums:\n";
+	for(int i=0;i<col;i++)
+		cout<<csum[i]<<"\t";
+	getchar();
+	ret = clFlush(command_queue);
+	ret = clReleaseKernel(kernel);
+	ret = clReleaseProgram(program);
+	ret = clReleaseMemObject(arr);
+	ret = clReleaseMemObject(rowsm);
+	ret = clReleaseMemObject(colsm);
+	ret = clReleaseCommandQueue(command_queue);
+	ret = clReleaseContext(context);
+
+	getch();
+	return 0;
+}

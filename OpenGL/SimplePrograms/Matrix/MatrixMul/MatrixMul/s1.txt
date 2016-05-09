@@ -1,0 +1,9 @@
+__kernel void mul(__global int * a,__global int * b,__global int * ra,__global int * ca,__global int * cb,__global int * c){
+	int r1 = get_global_id(1);
+	int c1=get_global_id(0);
+	c[r1*cb[0]+r1]=0;
+	for(int k=0;k<ra[0];k++)
+	{
+	c[r1*cb[0]+r1]+=a[r1*ra[0]+k]*b[k*cb[0]+c1];
+	}
+}
