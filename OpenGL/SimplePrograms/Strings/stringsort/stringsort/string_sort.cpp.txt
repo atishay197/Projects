@@ -1,0 +1,73 @@
+#include<CL/cl.h>
+#include<stdlib.h>
+#include<conio.h>
+#include<string.h>
+#include<iostream>
+#define MAX_SOURCE_SIZE (0X100000)
+using namespace std ;
+
+int main(int argc , char ** argv[])
+{
+	int size,i,n;
+	char a[1000],b[1000];
+	cout <<"Enter  string : ";
+	cin >> a;
+	n = strlen(a);
+	FILE *fp ; 
+	char *source_str ;
+	size_t source_size ;
+	fp = fopen("stringsort.cl","r");
+	if (!fp)
+	{
+		cout <<"error "<<endl;
+		exit(1);
+	}
+	source_str = (char * )malloc(MAX_SOURCE_SIZE);
+	source_size = fread(source_str,1 ,MAX_SOURCE_SIZE,fp);
+	fclose(fp);
+
+	cl_platform_id  platform_id = NULL ;
+	cl_device_id device_id = NULL ;
+	cl_uint ret_num_device ;
+	cl_uint ret_num_platform ;
+
+	cl_int ret = clGetPlatformIDs(1 , & platform_id , & ret_num_platform);
+	ret= clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_GPU , 1,  &device_id , &ret_num_device);
+
+	cl_context context = clCreateContext(NULL, 1, &device_id,NULL,NULL,&ret);
+	cl_command_queue command_queue =clCreateCommandQueue(context,device_id , 0 , &ret );
+
+	cl_mem a_mem_obj = clCreateBuffer(context,CL_MEM_READ_ONLY, n*sizeof(char), NULL, &ret);
+	cl_mem b_mem_obj = clCreateBuffer(context,CL_MEM_WRITE_ONLY, n*sizeof(char), NULL, &ret);
+
+	ret = clEnqueueWriteBuffer(command_queue,a_mem_obj, CL_TRUE ,0 , n*sizeof(char),a,0,NULL ,NULL );
+
+	cl_program program = clCreateProgramWithSource(context, 1,(const char**)&source_str,(const size_t*)&source_size , &ret );
+	ret= clBuildProgram(program , 1, &device_id, NULL, NULL, NULL);
+	cl_kernel kernel = clCreateKernel(program , "sort",&ret);
+	ret= clSetKernelArg(kernel, 0,sizeof(cl_mem), (void*) &a_mem_obj);
+	ret= clSetKernelArg(kernel, 1,sizeof(cl_mem), (void*) &b_mem_obj);
+	ret= clSetKernelArg(kernel, 2,sizeof(cl_mem), (void*) &n);
+	
+	size_t global_item_size = n;
+	size_t local_item_size = 1 ;
+
+	ret = clEnqueueNDRangeKernel(command_queue, kernel ,1,NULL,&global_item_size,&local_item_size,0,NULL,NULL);
+
+	ret = clFinish(command_queue);
+	ret = clEnqueueReadBuffer(command_queue, b_mem_obj,CL_TRUE,0,n*sizeof(char),b,0,NULL, NULL);
+
+	cout <<"DONE "<<endl;
+	b[n] = '\0';
+	cout << b <<endl;
+	cout <<"DONE..."<<endl;
+	ret = clFlush(command_queue);
+	ret = clReleaseKernel(kernel);
+	ret = clReleaseProgram(program);
+	ret = clReleaseMemObject(a_mem_obj);
+	ret = clReleaseMemObject(b_mem_obj);
+	ret = clReleaseCommandQueue(command_queue);
+	ret = clReleaseContext(context);
+	getch();
+	return 0 ;
+}
