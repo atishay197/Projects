@@ -1,0 +1,113 @@
+#include<iostream>
+#include<string.h>
+#include<cstdio>
+#include<CL/cl.h>
+#include<conio.h>
+#define MAX_SOURCE_SIZE (0x100000)
+#define size 1000
+
+using namespace std;
+
+int main(int argc, char *argv[])
+{
+
+	char *str1 = (char *)malloc(size*sizeof(char));
+	char *str2 = (char *)malloc(size*sizeof(char));
+	int *lenOfEachWord = (int *)malloc(size*sizeof(int));
+	int i = 0, len[100], j = 0, l = 0;
+
+	printf("Enter a string:\n");
+	gets(str1);
+	while(str1[i]!='\0')
+	{
+		l = 0;
+		while((str1[i] != 32) && (str1[i] != '\0'))
+		{
+			i++;
+			l++;
+		}
+		len[j] = l;
+		j++;
+		i++;
+	}
+	int nofwords = j--;
+	lenOfEachWord = len;
+
+	FILE *fp = fopen("string1.cl", "r");
+	char *source_str;
+	size_t source_size;
+
+	if(!fp)
+	{
+		cout<<"Failed";
+		getch();
+		exit(1);
+	}
+
+	source_str = (char*)malloc(MAX_SOURCE_SIZE);
+	source_size = fread(source_str, 1, MAX_SOURCE_SIZE, fp);
+	fclose(fp);
+
+	cl_platform_id platform_id = NULL;
+	cl_device_id device_id = NULL;
+	cl_uint ret_num_devices;
+	cl_uint ret_num_platforms;
+
+	cl_int ret = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
+	 ret = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_GPU, 1, &device_id, &ret_num_devices);	
+	
+	cl_context context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &ret);
+	
+	//Create Command Queue
+	cl_command_queue command_queue = clCreateCommandQueue(context, device_id, 0, &ret);
+
+	//Create Memory Buffers on the Device for each Vector
+	cl_mem a_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY, size*sizeof(char), NULL, &ret);
+	cl_mem b_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY, size*sizeof(char), NULL, &ret);
+	cl_mem len_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY, size*sizeof(int), NULL, &ret);
+	
+
+	//Copy the lists A and B to respective Memory Buffers
+	ret = clEnqueueWriteBuffer(command_queue, a_mem_obj, CL_TRUE, 0, size*sizeof(char), str1, 0 ,NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, len_mem_obj, CL_TRUE, 0, size*sizeof(int), lenOfEachWord, 0 ,NULL, NULL);
+
+	//Create Program from Kernel Source
+	cl_program program = clCreateProgramWithSource(context, 1, (const char**)&source_str, (const size_t*)&source_size, &ret);
+
+	//Build the program
+	ret = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
+
+	//Create the OpenCl Kernel
+	cl_kernel kernel = clCreateKernel(program, "Reverse", &ret);
+
+	//Set the args of the kernel
+	ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*)&a_mem_obj);
+	ret = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void*)&b_mem_obj);
+	ret = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void*)&len_mem_obj);
+
+	
+	//Execute the OpenCL Kernel on the list
+	size_t global_item_size = nofwords ;		//Process the entire list
+	size_t local_item_size = 1;			//Process in groups of 64
+
+	ret = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global_item_size, &local_item_size, 0, NULL, NULL);
+	ret = clFinish(command_queue);
+	ret = clEnqueueReadBuffer(command_queue, b_mem_obj, CL_TRUE, 0, size*(sizeof(char)), str2, 0, NULL, NULL);
+
+	cout<<"Done\n";
+	cout<<"Reversed String:\n"<<str2;
+
+	getchar();
+	ret = clFlush(command_queue);
+	ret = clReleaseKernel(kernel);
+	ret = clReleaseProgram(program);
+	ret = clReleaseMemObject(a_mem_obj);
+	ret = clReleaseMemObject(b_mem_obj);
+	ret = clReleaseCommandQueue(command_queue);
+	ret = clReleaseContext(context);
+
+	getch();
+	return 0;
+}
+	
+
