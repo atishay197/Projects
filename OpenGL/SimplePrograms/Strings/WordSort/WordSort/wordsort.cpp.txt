@@ -1,0 +1,107 @@
+#include<stdio.h>
+#include<stdlib.h>
+#include<CL/cl.h>
+
+#include<string.h>
+#include<conio.h>
+
+#define MAX_SOURCE_SIZE 0x100000 
+
+int main(void)
+{
+	char tempstr[1000];
+	int n=0;
+	printf("Enter the string: \n");
+	gets(tempstr);
+
+	int len=strlen(tempstr);
+	for(int i=0;i<len;i++)
+	{
+		if(tempstr[i]==' ')
+			n++;
+	}
+	n++;
+	int begctr=0,numctr=0;
+	int *arr=(int *)malloc(sizeof(int)*n);
+	for(int i=0;i<len;i++)
+	{
+		if(tempstr[i]==' ' || i==len-1)
+		{
+			arr[numctr++]=i-begctr+1;
+			begctr=i+1;
+		}
+		if(i==len-1)
+			arr[numctr-1]++;
+	}
+	char * str=(char *)malloc(sizeof(char)*len);
+	strcpy(str,tempstr);
+
+	FILE *fp;
+	char * src_str;
+	size_t src_size;
+	fp=fopen("wordsort.cl","r");
+	if(!fp)
+	{
+		fprintf(stderr,"Failed to load kernel\n");
+		getchar();
+		exit(1);
+	}
+
+	src_str=(char*)malloc(MAX_SOURCE_SIZE);
+	src_size=fread(src_str,1,MAX_SOURCE_SIZE,fp);
+	fclose(fp);
+
+	cl_platform_id platform_id=NULL;
+	cl_device_id device_id=NULL;
+
+	cl_int ret=clGetPlatformIDs(1,&platform_id,NULL);
+	ret=clGetDeviceIDs(platform_id,CL_DEVICE_TYPE_GPU,1,&device_id,NULL);
+	cl_context context = clCreateContext(NULL,1,&device_id,NULL,NULL,&ret);
+	cl_command_queue command_queue = clCreateCommandQueue(context,device_id,0,&ret);
+
+	cl_mem a_mem_obj=clCreateBuffer(context,CL_MEM_READ_ONLY,len*sizeof(char),NULL,&ret);
+	cl_mem b_mem_obj=clCreateBuffer(context,CL_MEM_READ_ONLY,n*sizeof(int),NULL,&ret);
+	cl_mem c_mem_obj=clCreateBuffer(context,CL_MEM_WRITE_ONLY,len*sizeof(char),NULL,&ret);
+
+	ret=clEnqueueWriteBuffer(command_queue,a_mem_obj,CL_TRUE,0,len*sizeof(char),str,0,NULL,NULL);
+	ret=clEnqueueWriteBuffer(command_queue,b_mem_obj,CL_TRUE,0,n*sizeof(int),arr,0,NULL,NULL);
+
+	cl_program program = clCreateProgramWithSource(context,1,(const char **)&src_str,(const size_t *)&src_size,&ret);
+	
+	ret=clBuildProgram(program,1,&device_id,NULL,NULL,NULL);
+
+	cl_kernel kernel=clCreateKernel(program,"selection_string",&ret);
+
+	ret=clSetKernelArg(kernel,0,sizeof(cl_mem),(void*)&a_mem_obj);
+	ret=clSetKernelArg(kernel,1,sizeof(cl_mem),(void*)&c_mem_obj);
+	ret=clSetKernelArg(kernel,2,sizeof(cl_mem),(void*)&b_mem_obj);
+	
+	size_t global_item_size=n;
+	size_t local_item_size=1;
+	
+	char *str1=(char*)malloc(len*sizeof(char));
+	
+	ret=clEnqueueNDRangeKernel(command_queue,kernel,1,NULL,&global_item_size,&local_item_size,0,NULL,NULL);
+	
+	ret=clFinish(command_queue);
+	
+	ret=clEnqueueReadBuffer(command_queue,c_mem_obj,CL_TRUE,0,len*sizeof(char),str1,0,NULL,NULL);
+	
+	printf("Done\n");
+	
+	str1[len]='\0';
+	
+	printf("Resultant string : %s",str1);
+	getchar();
+	
+	ret=clFlush(command_queue);
+	ret=clReleaseKernel(kernel);
+	ret=clReleaseProgram(program);
+	ret=clReleaseMemObject(a_mem_obj);
+	ret=clReleaseMemObject(c_mem_obj);
+	ret=clReleaseCommandQueue(command_queue);
+	ret=clReleaseContext(context);
+	getch();
+	 
+	return 0;
+}
