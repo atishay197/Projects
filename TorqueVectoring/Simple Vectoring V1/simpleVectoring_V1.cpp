@@ -1,6 +1,7 @@
 #include <bits/stdc++.h>
 #include "dataLoggingStructures.h"
 #include "outputTorque.h"
+#include "wheelLoads.h"
 #include "carData.h"
 #include "torqueVectoring.h"
 
